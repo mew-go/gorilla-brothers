@@ -32,7 +32,8 @@ canvas{display:block;width:100%;height:100%;touch-action:none;}
 .card .pc small{font-size:16px;}
 .stocks{font-size:13px;letter-spacing:2px;}
 .card.right{text-align:right;}
-.gauge{height:8px;width:96px;border:2px solid var(--ink);border-radius:6px;background:#fff;overflow:hidden;margin-top:4px;}
+.gauge{position:relative;height:9px;width:96px;border:2px solid var(--ink);border-radius:6px;background:#fff;overflow:hidden;margin-top:4px;}
+.gauge::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent calc(33.33% - 1px),var(--ink) calc(33.33% - 1px),var(--ink) calc(33.33% + 1px),transparent calc(33.33% + 1px),transparent calc(66.66% - 1px),var(--ink) calc(66.66% - 1px),var(--ink) calc(66.66% + 1px),transparent calc(66.66% + 1px));}
 .card.right .gauge{margin-left:auto;}
 .gauge i{display:block;height:100%;width:0;background:#ffd23f;}
 .gauge.full i{background:linear-gradient(90deg,#ffd23f,#ff8a3d,#ffd23f);background-size:200% 100%;animation:gl .8s linear infinite;}
@@ -57,6 +58,7 @@ button{font-family:var(--display);font-size:16px;border:3px solid var(--ink);bor
 button:active{transform:translateY(3px);box-shadow:0 1px 0 var(--ink);}
 button:focus-visible{outline:3px solid var(--accent);outline-offset:3px;}
 button.go{background:var(--accent);color:#fff;}
+button.oni{background:#3b2a24;color:#ff6b4a;}
 .res{font-family:var(--display);font-size:58px;line-height:1;margin:4px 0 6px;-webkit-text-stroke:2px var(--ink);text-shadow:0 4px 0 var(--ink);}
 .res.win{color:#ffd23f;} .res.lose{color:#9aa6ff;}
 .big{position:fixed;left:0;right:0;white-space:nowrap;top:38%;text-align:center;font-family:var(--display);font-size:64px;color:#ffd23f;-webkit-text-stroke:3px var(--ink);text-shadow:0 6px 0 var(--ink);pointer-events:none;transform:scale(.6);opacity:0;transition:transform .25s cubic-bezier(.3,1.6,.5,1),opacity .2s;}
@@ -90,13 +92,13 @@ button.go{background:var(--accent);color:#fff;}
       <li><b>近い</b>剣。上から前へ斬り下ろす</li>
       <li><b>空中</b>回転キック。真下ならヒップドロップ</li>
       <li><b>ブロック</b>攻撃される瞬間に相手側をタップで盾。早すぎると失敗</li>
-      <li><b>必殺技</b>攻撃を当てる・受けるとゲージがたまる。満タンで画面を長押しするとゴリラビーム！空中で撃つと相手の方向へ少し斜めに撃てる（そのぶん威力は半分）。地上のビームはジャンプでよけられる</li>
+      <li><b>必殺技</b>攻撃を当てる・受けるとゲージがたまる（3回分までためられる）。1回分たまったら画面を長押しするとゴリラビーム！空中で撃つと相手の方向へ少し斜めに撃てる（そのぶん威力は半分）。地上のビームはジャンプでよけられる</li>
     </ul>
     <p class="sub" style="margin:0 0 10px">ダメージ%が高いほど遠くへふっとぶ</p>
     <div class="diffs">
-      <button id="d0" data-d="0">やさしい</button>
       <button id="d1" data-d="1" class="go">ふつう</button>
       <button id="d2" data-d="2">つよい</button>
+      <button id="d3" data-d="3" class="oni">鬼</button>
     </div>
   </div>
 </div>
@@ -128,6 +130,7 @@ const DIFF=[
   {name:'やさしい',think:.55,aggr:.45,grab:.12,recover:.55,escape:4,speed:.8,parry:.05,dmgMul:.8},
   {name:'ふつう',  think:.32,aggr:.65,grab:.22,recover:.85,escape:7,speed:.95,parry:.15,dmgMul:1},
   {name:'つよい',  think:.16,aggr:.85,grab:.32,recover:1,  escape:11,speed:1.08,parry:.3,dmgMul:1.15},
+  {name:'鬼',      think:.03,aggr:1,  grab:.4, recover:1,  escape:14,speed:1.35,parry:.8,dmgMul:1.6,oni:1},
 ];
 let diff=DIFF[1];
 
@@ -166,6 +169,7 @@ function w2s(x,y){return [(x-cam.x)*cam.z+W/2,(y-cam.y)*cam.z+H*0.55];}
 function s2w(sx,sy){return [(sx-W/2)/cam.z+cam.x,(sy-H*0.55)/cam.z+cam.y];}
 function busy(f){return f.hitstun>0||f.state==='attack'||f.state==='land'||f.state==='parry'||f.dead;}
 // ブロッキング: 盾を構えた直後 PARRY_WIN 秒に攻撃を受けると無効化して相手をひるませる。外すと少しスキ
+const GMAX=300; // ゴリラビーム3回分までためられる
 const PARRY_WIN=.18, PARRY_TOTAL=.42;
 function startParry(f){
   if(busy(f))return false;
@@ -175,7 +179,7 @@ function startParry(f){
   return true;
 }
 function parrySuccess(a,o){
-  o.gauge=Math.min(100,o.gauge+12);
+  o.gauge=Math.min(GMAX,o.gauge+12);
   o.state='idle';o.st=0;o.inv=.15;
   a.state='tumble';a.atk=null;a.hitstun=.55;a.trail=0;a.combo=0;a.chase=0;a.buf=0;
   a.vx=-a.face*140;a.vy=a.onGround?0:-120;
@@ -249,10 +253,11 @@ const MOVES={
 function applyHit(a,o,key,dirX){
   if(key!=='super'&&key!=='superAir'&&o.state==='parry'&&o.st<PARRY_WIN){parrySuccess(a,o);return;}
   const k=MOVES[key];
-  if(key!=='super'&&key!=='superAir')a.gauge=Math.min(100,a.gauge+k.d*4);
-  o.gauge=Math.min(100,o.gauge+k.d*2.5);
+  if(key!=='super'&&key!=='superAir')a.gauge=Math.min(GMAX,a.gauge+k.d*4*(diff.oni&&!a.isP?2:1));
+  o.gauge=Math.min(GMAX,o.gauge+k.d*2.5*(diff.oni&&!o.isP?2:1));
   o.dmg+=Math.round(k.d*(a.isP?1:diff.dmgMul));
-  const kb=k.b+o.dmg*k.s;
+  let kb=k.b+o.dmg*k.s;
+  if(diff.oni&&!o.isP)kb*=.7;
   const dir=dirX||a.face;
   o.vx=dir*kb*Math.cos(k.ang);o.vy=-kb*Math.sin(k.ang)-(k.stun&&k.hop!==0?60:0);
   o.onGround=false;o.hitstun=k.stun||.22+kb/1900;o.state='tumble';o.targetX=null;o.queued=null;
@@ -276,7 +281,7 @@ function superAim(f){
 function startSuper(f){
   if(f.gauge<100||f.dead||f.hitstun>0||f.state==='attack'||f.state==='land')return false;
   const o=opp(f);
-  f.gauge=0;f.aim=0;f.beamA=0;f.state='attack';f.atk='super';f.st=0;f.hitDone=false;f.targetX=null;f.chase=0;f.buf=0;f.beats=0;f.beamOn=false;
+  f.gauge-=100;f.aim=0;f.beamA=0;f.state='attack';f.atk='super';f.st=0;f.hitDone=false;f.targetX=null;f.chase=0;f.buf=0;f.beats=0;f.beamOn=false;
   f.face=Math.sign(o.x-f.x)||f.face;f.parryRoll=true;
   showBig(f.isP?'ゴリラビーム!!':'ジャンプでよけろ!',1000);
   return true;
@@ -440,6 +445,8 @@ function updateAI(dt){
   if(f.dead||f.hitstun>0)return;
   if(o.state==='attack'&&o.atk==='super'&&o.st<.95&&f.onGround&&Math.sign(f.x-o.x)===o.face&&Math.random()<diff.recover*dt*3){jump(f,f.x-o.face*40);return;}
   if(f.gauge>=100&&!o.dead&&Math.abs(o.y-f.y)<R*1.2&&f.onGround&&Math.random()<dt*diff.aggr*1.5){if(startSuper(f))return;}
+  if(diff.oni&&f.gauge>=100&&!f.onGround&&!o.dead&&o.y>f.y&&Math.random()<dt*2){if(startSuper(f))return;}
+  if(diff.oni&&!o.onGround&&Math.abs(o.x)>L-10&&f.onGround&&Math.random()<dt*3){f.targetX=clamp(o.x,-L+15,L-15);f.run=true;}
   if(o.state==='attack'&&!o.parryRoll&&o.st>.02&&!o.hitDone&&Math.abs(o.x-f.x)<SWORD+R){
     o.parryRoll=true;if(Math.random()<diff.parry&&startParry(f))return;
   }
@@ -828,7 +835,7 @@ function updCam(dt){
 /* ---------- loop ---------- */
 const big=document.getElementById('big');
 function showBig(t,ms=900){big.textContent=t;big.style.fontSize=t.length>6?'clamp(28px,9vw,48px)':'';big.classList.add('show');clearTimeout(showBig.h);showBig.h=setTimeout(()=>big.classList.remove('show'),ms);}
-let last=performance.now(),acc=0;
+let last=performance.now(),acc=0,lastStock=-1;
 const pG=document.getElementById('pG'),eG=document.getElementById('eG'),pGw=document.getElementById('pGw'),eGw=document.getElementById('eGw'),superBtn=document.getElementById('superBtn');
 // ゲージ満タンのとき、画面のどこかを長押し(0.35秒)でゴリラビーム
 let hold=null;const HOLD_T=.35;
@@ -861,7 +868,8 @@ function frame(now){
     if(endT>0){endT-=dt;if(endT<=0)finish();}
   }else{time+=dt;}
   if(P&&E){
-    pG.style.width=P.gauge+'%';eG.style.width=E.gauge+'%';
+    pG.style.width=(P.gauge/GMAX*100)+'%';eG.style.width=(E.gauge/GMAX*100)+'%';
+    const ps=Math.floor(P.gauge/100);if(ps!==lastStock){lastStock=ps;superBtn.textContent=ps>1?`長押しでゴリラビーム！ ×${ps}`:'長押しでゴリラビーム！';}
     pGw.classList.toggle('full',P.gauge>=100);eGw.classList.toggle('full',E.gauge>=100);
     const show=running&&introT<=0&&P.gauge>=100&&!P.dead;
     if(superBtn.hidden===show)superBtn.hidden=!show;
@@ -890,6 +898,7 @@ function start(d){
   playBgm();
   diff=DIFF[d];P=makeF(true);E=makeF(false);
   parts.length=pops.length=rings.length=0;endT=-1;hitstop=0;aiT=.6;
+  if(diff.oni)E.gauge=100;
   updHud();running=true;introT=1.0;showBig(diff.name,800);
   document.getElementById('title').hidden=true;document.getElementById('result').hidden=true;
   document.getElementById('hint').hidden=false;
