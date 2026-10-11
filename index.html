@@ -33,7 +33,6 @@ canvas{display:block;width:100%;height:100%;touch-action:none;}
 .stocks{font-size:13px;letter-spacing:2px;}
 .card.right{text-align:right;}
 .gauge{position:relative;height:9px;width:96px;border:2px solid var(--ink);border-radius:6px;background:#fff;overflow:hidden;margin-top:4px;}
-.gauge::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent calc(33.33% - 1px),var(--ink) calc(33.33% - 1px),var(--ink) calc(33.33% + 1px),transparent calc(33.33% + 1px),transparent calc(66.66% - 1px),var(--ink) calc(66.66% - 1px),var(--ink) calc(66.66% + 1px),transparent calc(66.66% + 1px));}
 .card.right .gauge{margin-left:auto;}
 .gauge i{display:block;height:100%;width:0;background:#ffd23f;}
 .gauge.full i{background:linear-gradient(90deg,#ffd23f,#ff8a3d,#ffd23f);background-size:200% 100%;animation:gl .8s linear infinite;}
@@ -92,7 +91,7 @@ button.oni{background:#3b2a24;color:#ff6b4a;}
       <li><b>近い</b>剣。上から前へ斬り下ろす</li>
       <li><b>空中</b>回転キック。真下ならヒップドロップ</li>
       <li><b>ブロック</b>攻撃される瞬間に相手側をタップで盾。早すぎると失敗</li>
-      <li><b>必殺技</b>攻撃を当てる・受けるとゲージがたまる（3回分までためられる）。1回分たまったら画面を長押しするとゴリラビーム！空中で撃つと相手の方向へ少し斜めに撃てる（そのぶん威力は半分）。地上のビームはジャンプでよけられる</li>
+      <li><b>必殺技</b>攻撃を当てる・受けるとゲージがたまる。満タンで画面を長押しするとゴリラビーム！空中で撃つと相手の方向へ少し斜めに撃てる（そのぶん威力は半分）。地上のビームはジャンプでよけられる</li>
     </ul>
     <p class="sub" style="margin:0 0 10px">ダメージ%が高いほど遠くへふっとぶ</p>
     <div class="diffs">
@@ -169,7 +168,7 @@ function w2s(x,y){return [(x-cam.x)*cam.z+W/2,(y-cam.y)*cam.z+H*0.55];}
 function s2w(sx,sy){return [(sx-W/2)/cam.z+cam.x,(sy-H*0.55)/cam.z+cam.y];}
 function busy(f){return f.hitstun>0||f.state==='attack'||f.state==='land'||f.state==='parry'||f.dead;}
 // ブロッキング: 盾を構えた直後 PARRY_WIN 秒に攻撃を受けると無効化して相手をひるませる。外すと少しスキ
-const GMAX=300; // ゴリラビーム3回分までためられる
+const GMAX=100; // ゴリラビームは1回分だけためられる
 const PARRY_WIN=.18, PARRY_TOTAL=.42;
 function startParry(f){
   if(busy(f))return false;
@@ -181,8 +180,10 @@ function startParry(f){
 function parrySuccess(a,o){
   o.gauge=Math.min(GMAX,o.gauge+12);
   o.state='idle';o.st=0;o.inv=.15;
-  a.state='tumble';a.atk=null;a.hitstun=.55;a.trail=0;a.combo=0;a.chase=0;a.buf=0;
-  a.vx=-a.face*140;a.vy=a.onGround?0:-120;
+  // 地上でブロッキングされると0.55秒ひるむ。空中だと0.2秒だけ（落下中に長く動けないのを防ぐ）
+  const air=!a.onGround;
+  a.state='tumble';a.atk=null;a.hitstun=air?.2:.55;a.trail=0;a.combo=0;a.chase=0;a.buf=0;
+  a.vx=-a.face*(air?90:140);a.vy=air?-180:0;
   hitstop=.2;shake=7;
   tone(1568,.18,'triangle',.12);setTimeout(()=>tone(2093,.2,'triangle',.1),60);
   const hx=(a.x+o.x)/2;
@@ -253,8 +254,8 @@ const MOVES={
 function applyHit(a,o,key,dirX){
   if(key!=='super'&&key!=='superAir'&&o.state==='parry'&&o.st<PARRY_WIN){parrySuccess(a,o);return;}
   const k=MOVES[key];
-  if(key!=='super'&&key!=='superAir')a.gauge=Math.min(GMAX,a.gauge+k.d*4*(diff.oni&&!a.isP?2:1));
-  o.gauge=Math.min(GMAX,o.gauge+k.d*2.5*(diff.oni&&!o.isP?2:1));
+  if(key!=='super'&&key!=='superAir')a.gauge=Math.min(GMAX,a.gauge+k.d*4);
+  o.gauge=Math.min(GMAX,o.gauge+k.d*2.5);
   o.dmg+=Math.round(k.d*(a.isP?1:diff.dmgMul));
   let kb=k.b+o.dmg*k.s;
   if(diff.oni&&!o.isP)kb*=.7;
@@ -898,7 +899,6 @@ function start(d){
   playBgm();
   diff=DIFF[d];P=makeF(true);E=makeF(false);
   parts.length=pops.length=rings.length=0;endT=-1;hitstop=0;aiT=.6;
-  if(diff.oni)E.gauge=100;
   updHud();running=true;introT=1.0;showBig(diff.name,800);
   document.getElementById('title').hidden=true;document.getElementById('result').hidden=true;
   document.getElementById('hint').hidden=false;
